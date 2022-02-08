@@ -1,6 +1,7 @@
 /* @flow */
 import React, {Component} from 'react';
-import {CompositeDecorator, Editor, EditorState, Modifier, RichUtils, Entity} from 'draft-js';
+import Editor from '@draft-js-plugins/editor';
+import {CompositeDecorator, EditorState, Modifier, RichUtils, Entity} from 'draft-js';
 import getDefaultKeyBinding from 'draft-js/lib/getDefaultKeyBinding';
 import {getTextAlignBlockMetadata, getTextAlignClassName, getTextAlignStyles} from './lib/blockStyleFunctions';
 import changeBlockDepth from './lib/changeBlockDepth';
@@ -18,6 +19,9 @@ import cx from 'classnames';
 import autobind from 'class-autobind';
 import EventEmitter from 'events';
 import {BLOCK_TYPE} from 'draft-js-utils';
+import createMentionPlugin, {
+  defaultSuggestionsFilter,
+} from '@draft-js-plugins/mention';
 
 import './Draft.global.css';
 import styles from './RichTextEditor.css';
@@ -29,6 +33,7 @@ import type {ImportOptions} from './lib/EditorValue';
 import ButtonGroup from './ui/ButtonGroup';
 import Button from './ui/Button';
 import Dropdown from './ui/Dropdown';
+import mentions from './mentions';
 
 const MAX_LIST_DEPTH = 2;
 
@@ -68,6 +73,10 @@ type Props = {
   onBlur?: (event: Object) => void;
 };
 
+const mentionPlugin = createMentionPlugin();
+const {MentionSuggestions} = mentionPlugin;
+const plugins = [mentionPlugin, {decorators: [LinkDecorator]}, {decorators: [ImageDecorator]}];
+
 export default class RichTextEditor extends Component {
   props: Props;
   _keyEmitter: EventEmitter;
@@ -75,6 +84,7 @@ export default class RichTextEditor extends Component {
 
   constructor() {
     super(...arguments);
+    this.state = {mentionsSearch: '', mentionsOpen: false};
     this._keyEmitter = new EventEmitter();
     autobind(this);
   }
@@ -160,11 +170,29 @@ export default class RichTextEditor extends Component {
             }}
             spellCheck={true}
             readOnly={readOnly}
+            plugins={plugins}
+          />
+          <MentionSuggestions
+            open={this.state.mentionsOpen}
+            suggestions={defaultSuggestionsFilter(this.state.mentionsSearch, mentions)}
+            onSearchChange={this._onSearchChange}
+            onOpenChange={this._onOpenChange}
+            onAddMention={() => {
+              // get the mention object selected
+            }}
           />
         </div>
         { toolbarOnBottom && editorToolbar }
       </div>
     );
+  }
+
+  _onSearchChange({value}: { value: string }) {
+    this.setState({...this.state, mentionsSearch: value});
+  }
+
+  _onOpenChange(newOpen: boolean) {
+    this.setState({...this.state, mentionsOpen: newOpen});
   }
 
   _shouldHidePlaceholder(): boolean {
@@ -359,10 +387,12 @@ function defaultBlockStyleFn(block: ContentBlock): string {
   }
 }
 
-const decorator = new CompositeDecorator([LinkDecorator, ImageDecorator]);
+const pluginDecorators = plugins.reduce((acc, p) => [...acc, ...p.decorators], []);
+const customDecorators = [LinkDecorator, ImageDecorator];
+const decorator = new CompositeDecorator([...pluginDecorators, ...customDecorators]);
 
 function createEmptyValue(): EditorValue {
-  return EditorValue.createEmpty(decorator);
+  return EditorValue.createEmpty();
 }
 
 function createValueFromString(markup: string, format: string, options?: ImportOptions): EditorValue {
